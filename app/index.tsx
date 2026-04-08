@@ -1,4 +1,4 @@
-  import {
+import {
   View,
   Text,
   TextInput,
@@ -8,14 +8,18 @@
   ScrollView,
   ActivityIndicator,
   Modal,
+  ImageBackground,
+  Dimensions,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useState } from 'react';
 import { router } from 'expo-router';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { ref, get } from 'firebase/database';
 import { auth, database } from '@/config/firebase';
+
+const { width, height } = Dimensions.get('window');
 
 export default function LoginPage() {
   console.log('[v0] LoginPage mounted');
@@ -77,98 +81,106 @@ export default function LoginPage() {
   };
 
   return (
-    <LinearGradient
-      colors={['#0a0e1a', '#1a2332', '#0a0e1a']}
+    <ImageBackground
+      source={{ uri: 'https://res.cloudinary.com/dexo5rpxb/image/upload/v1775647457/shop_suip3w.png' }}
       style={styles.background}
+      resizeMode="cover"
+      blurRadius={3}
     >
       <View style={styles.overlay}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <View style={styles.glassPanel}>
-            <Text style={styles.title}>Login</Text>
+          <BlurView intensity={40} tint="dark" style={styles.glassPanel}>
+            <View style={styles.glassPanelInner}>
+              <Text style={styles.title}>Login</Text>
 
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+              {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Email</Text>
-              <TextInput
-                style={styles.input}
-                value={email}
-                onChangeText={(text) => {
-                  setEmail(text);
-                  setError('');
-                }}
-                placeholder="Email"
-                placeholderTextColor="#666"
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Email</Text>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={email}
+                    onChangeText={(text) => {
+                      setEmail(text);
+                      setError('');
+                    }}
+                    placeholder="Enter your email"
+                    placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+              </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Password</Text>
-              <View style={styles.passwordContainer}>
-                <TextInput
-                  style={styles.passwordInput}
-                  value={password}
-                  onChangeText={(text) => {
-                    setPassword(text);
-                    setError('');
-                  }}
-                  placeholder="Password"
-                  placeholderTextColor="#666"
-                  secureTextEntry={!showPassword}
-                />
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Password</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    value={password}
+                    onChangeText={(text) => {
+                      setPassword(text);
+                      setError('');
+                    }}
+                    placeholder="Enter your password"
+                    placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? (
+                      <EyeOff color="rgba(255, 255, 255, 0.6)" size={22} />
+                    ) : (
+                      <Eye color="rgba(255, 255, 255, 0.6)" size={22} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.optionsRow}>
                 <TouchableOpacity
-                  style={styles.eyeIcon}
-                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.rememberMeContainer}
+                  onPress={() => setRememberMe(!rememberMe)}
                 >
-                  {showPassword ? (
-                    <EyeOff color="#999" size={22} />
-                  ) : (
-                    <Eye color="#999" size={22} />
-                  )}
+                  <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                    {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.rememberMeText}>Remember me</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => router.push('/forgot-password')}>
+                  <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+                onPress={handleLogin}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.loginButtonText}>Login</Text>
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.registerContainer}>
+                <Text style={styles.registerText}>{"Don't have an account? "}</Text>
+                <TouchableOpacity onPress={() => router.push('/registration-terms')}>
+                  <Text style={styles.registerLink}>Register</Text>
                 </TouchableOpacity>
               </View>
             </View>
-
-            <View style={styles.optionsRow}>
-              <TouchableOpacity
-                style={styles.rememberMeContainer}
-                onPress={() => setRememberMe(!rememberMe)}
-              >
-                <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
-                  {rememberMe && <Text style={styles.checkmark}>✓</Text>}
-                </View>
-                <Text style={styles.rememberMeText}>Remember me</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={() => router.push('/forgot-password')}>
-                <Text style={styles.forgotPasswordText}>Forgot password?</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
-              onPress={handleLogin}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.loginButtonText}>Login</Text>
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.registerContainer}>
-              <Text style={styles.registerText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={() => router.push('/registration-terms')}>
-                <Text style={styles.registerLink}>Register</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          </BlurView>
         </ScrollView>
       </View>
       <Modal
@@ -178,28 +190,30 @@ export default function LoginPage() {
         onRequestClose={() => setShowPendingModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Account Under Review</Text>
-            <Text style={styles.modalText}>
-              Your account is under review. We will respond within 24 hours.
-            </Text>
-            <ActivityIndicator color="#4a9eff" size="large" style={styles.modalSpinner} />
-          </View>
+          <BlurView intensity={60} tint="dark" style={styles.modalContent}>
+            <View style={styles.modalInner}>
+              <Text style={styles.modalTitle}>Account Under Review</Text>
+              <Text style={styles.modalText}>
+                Your account is under review. We will respond within 24 hours.
+              </Text>
+              <ActivityIndicator color="#B19CD9" size="large" style={styles.modalSpinner} />
+            </View>
+          </BlurView>
         </View>
       </Modal>
-    </LinearGradient>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   background: {
     flex: 1,
-    width: '100%',
-    height: '100%',
+    width: width,
+    height: height,
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -209,61 +223,71 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 40,
     paddingHorizontal: 20,
+    minHeight: height,
   },
   glassPanel: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 16,
-    padding: 32,
+    borderRadius: 20,
     width: '100%',
-    maxWidth: 420,
+    maxWidth: 380,
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 15,
+  },
+  glassPanelInner: {
+    padding: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontWeight: '700',
     color: '#fff',
-    marginBottom: 32,
+    marginBottom: 28,
     textAlign: 'center',
+    letterSpacing: 0.5,
   },
   errorText: {
-    color: '#ff4444',
+    color: '#ff6b6b',
     fontSize: 14,
     marginBottom: 16,
     textAlign: 'center',
     paddingHorizontal: 8,
     lineHeight: 20,
-    flexWrap: 'wrap',
+    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+    borderRadius: 8,
+    padding: 10,
   },
   inputContainer: {
-    marginBottom: 20,
+    marginBottom: 18,
   },
   inputLabel: {
-    fontSize: 14,
-    color: '#ccc',
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.8)',
     marginBottom: 8,
+    fontWeight: '500',
+  },
+  inputWrapper: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   input: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
     padding: 16,
     fontSize: 16,
     color: '#fff',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   passwordInput: {
     flex: 1,
@@ -278,7 +302,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 28,
     flexWrap: 'wrap',
     gap: 12,
   },
@@ -290,10 +314,10 @@ const styles = StyleSheet.create({
   checkbox: {
     width: 20,
     height: 20,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: '#666',
-    backgroundColor: 'transparent',
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -303,32 +327,37 @@ const styles = StyleSheet.create({
   },
   checkmark: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   rememberMeText: {
-    color: '#ccc',
+    color: 'rgba(255, 255, 255, 0.7)',
     fontSize: 14,
   },
   forgotPasswordText: {
     color: '#B19CD9',
     fontSize: 14,
-    textDecorationLine: 'underline',
   },
   loginButton: {
     backgroundColor: '#B19CD9',
-    borderRadius: 50,
-    paddingVertical: 18,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
+    shadowColor: '#B19CD9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   loginButtonDisabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   loginButtonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
+    letterSpacing: 0.5,
   },
   registerContainer: {
     flexDirection: 'row',
@@ -337,31 +366,33 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   registerText: {
-    color: '#ccc',
+    color: 'rgba(255, 255, 255, 0.7)',
     fontSize: 14,
   },
   registerLink: {
     color: '#B19CD9',
     fontSize: 14,
     fontWeight: '600',
-    textDecorationLine: 'underline',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
   },
   modalContent: {
-    backgroundColor: 'rgba(26, 26, 26, 0.95)',
     borderRadius: 20,
-    padding: 32,
     width: '100%',
-    maxWidth: 400,
-    alignItems: 'center',
+    maxWidth: 360,
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  modalInner: {
+    padding: 32,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
   modalTitle: {
     fontSize: 22,
@@ -371,13 +402,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   modalText: {
-    fontSize: 16,
-    color: '#ccc',
+    fontSize: 15,
+    color: 'rgba(255, 255, 255, 0.8)',
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 22,
     marginBottom: 24,
     paddingHorizontal: 8,
-    flexWrap: 'wrap',
   },
   modalSpinner: {
     marginTop: 8,

@@ -37,7 +37,6 @@ export interface RegistrationData {
     plateNumber: string;
     registrationCertificate: string;
     carImage: string;
-    seats: number;
     category?: string;
   };
 
@@ -105,7 +104,6 @@ export function RegistrationProvider({ children }: { children: ReactNode }) {
       plateNumber: '',
       registrationCertificate: '',
       carImage: '',
-      seats: 0,
     },
 
     operation: {

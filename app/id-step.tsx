@@ -24,7 +24,6 @@ export default function IdStepPage() {
   const [idFront, setIdFront] = useState<string | null>(null);
   const [idBack, setIdBack] = useState<string | null>(null);
   const [idNumber, setIdNumber] = useState(registrationData.idCard?.idNumber || '');
-  const [deliverWithBicycle, setDeliverWithBicycle] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
   const [showInstructions, setShowInstructions] = useState<'front' | 'back' | null>(null);
@@ -179,7 +178,6 @@ export default function IdStepPage() {
         'documents.idFront': idFrontUrl,
         'documents.idBack': idBackUrl,
         'documents.idNumber': idNumber.trim(),
-        deliverWithBicycle: deliverWithBicycle,
         registrationStep: 3,
         updatedAt: serverTimestamp(),
       });
@@ -366,17 +364,6 @@ export default function IdStepPage() {
             maxLength={11}
 />
   </View>
-
-  {/* Deliver with bicycle checkbox */}
-  <TouchableOpacity 
-    style={styles.checkboxContainer} 
-    onPress={() => setDeliverWithBicycle(!deliverWithBicycle)}
-  >
-    <View style={[styles.checkbox, deliverWithBicycle && styles.checkboxChecked]}>
-      {deliverWithBicycle && <Text style={styles.checkboxMark}>✓</Text>}
-    </View>
-    <Text style={styles.checkboxLabel}>Deliver with my bicycle</Text>
-  </TouchableOpacity>
 
   {/* Upload status indicator */}
   {isUploading && (
@@ -710,36 +697,6 @@ uploadButtonText: {
   fontWeight: '600',
   color: '#000',
   },
-  checkboxContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 20,
-    paddingVertical: 12,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#666',
-    backgroundColor: '#3a3a3a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  checkboxChecked: {
-    backgroundColor: '#B19CD9',
-    borderColor: '#B19CD9',
-  },
-  checkboxMark: {
-    color: '#000',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  checkboxLabel: {
-    color: '#fff',
-    fontSize: 16,
-  },
   uploadingContainer: {
     paddingVertical: 16,
     alignItems: 'center',
@@ -748,4 +705,4 @@ uploadButtonText: {
     color: '#B19CD9',
     fontSize: 14,
   },
-  });
+});

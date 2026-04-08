@@ -11,23 +11,37 @@ import {
   FlatList,
   Alert,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Camera, X, Check, ChevronLeft, Search } from 'lucide-react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import brandsData from '../assets/brands.json';
 import colorsData from '../assets/colors.json';
 import { auth, firestore } from '@/config/firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp, collection, query, where, getDocs, getDoc } from 'firebase/firestore';
 import { useRegistration } from '@/context/RegistrationContext';
 import { uploadImageToCloudinary } from '@/utils/cloudinary';
 
 type ImageType = 'vehiclePicture' | 'vehicleLicense' | 'vehicleRegistration';
 type ViewMode = 'main' | 'instruction' | 'camera' | 'preview';
+
+// Vehicle data from Firestore vehicles_master collection
+interface VehicleMasterDoc {
+  id: string;
+  brand: string;
+  models: string[];
+  vehicleCategory: 'car' | 'minibus' | 'motorbike' | 'truck';
+  services?: string[];
+  cargoTypes?: string[];
+  tonnageOptions?: string[];
+}
+
 type BrandItem = {
+  id: string;
   name: string;
-  category: 'Cars' | 'CarDelivery' | 'Minibuses' | 'Motorbikes' | 'SmallTrucks';
+  models: string[];
+  vehicleCategory: string;
 };
 
 interface VehicleData {
@@ -41,6 +55,7 @@ interface VehicleData {
   vehicleLicense: string;
   vehicleRegistration: string;
   services?: string[];
+  cargoTypes?: string[];
   tonnage?: string;
 }
 
@@ -65,10 +80,12 @@ export default function VehicleInformation() {
     vehicleLicense: '',
     vehicleRegistration: '',
     services: [],
+    cargoTypes: [],
     tonnage: '',
   });
   
   const [isUploading, setIsUploading] = useState(false);
+  const [isLoadingBrands, setIsLoadingBrands] = useState(true);
 
   const [showBrandPicker, setShowBrandPicker] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -76,7 +93,16 @@ export default function VehicleInformation() {
   const [showYearPicker, setShowYearPicker] = useState(false);
   const [showServicesPicker, setShowServicesPicker] = useState(false);
   const [showTonnagePicker, setShowTonnagePicker] = useState(false);
-  const [brandCategory, setBrandCategory] = useState<BrandItem['category'] | null>(null);
+  const [showCargoTypesPicker, setShowCargoTypesPicker] = useState(false);
+  
+  // All brands loaded from Firestore vehicles_master
+  const [allBrands, setAllBrands] = useState<BrandItem[]>([]);
+  const [selectedBrand, setSelectedBrand] = useState<BrandItem | null>(null);
+  
+  // Service rules loaded from vehicle_service_rules
+  const [availableServices, setAvailableServices] = useState<string[]>([]);
+  const [availableCargoTypes, setAvailableCargoTypes] = useState<string[]>([]);
+  const [availableTonnageOptions, setAvailableTonnageOptions] = useState<string[]>([]);
 
   const [brandSearch, setBrandSearch] = useState('');
   const [modelSearch, setModelSearch] = useState('');
@@ -166,109 +192,148 @@ export default function VehicleInformation() {
     setViewMode('camera');
   };
 
+  // Load brands from Firestore vehicles_master collection based on vehicleCategory
   useEffect(() => {
-    const allBrands: BrandItem[] = [];
-    const selectedCategory = registrationData.vehicleCategory || registrationData.vehicle?.category;
+    const loadBrandsFromFirestore = async () => {
+      setIsLoadingBrands(true);
+      
+      try {
+        const vehicleCategory = registrationData.vehicleCategory;
+        
+        if (!vehicleCategory) {
+          console.log('[v0] No vehicle category set');
+          setIsLoadingBrands(false);
+          return;
+        }
 
-    if (selectedCategory) {
-      // Only show brands from the selected category
-      if (selectedCategory === 'Cars' && brandsData.Cars) {
-        Object.keys(brandsData.Cars).forEach(name => allBrands.push({ name, category: 'Cars' }));
-      } else if (selectedCategory === 'CarDelivery' && (brandsData as any).CarDelivery) {
-        Object.keys((brandsData as any).CarDelivery).forEach(name => allBrands.push({ name, category: 'CarDelivery' }));
-      } else if (selectedCategory === 'Minibuses' && brandsData.Minibuses) {
-        Object.keys(brandsData.Minibuses).forEach(name => allBrands.push({ name, category: 'Minibuses' }));
-      } else if (selectedCategory === 'Motorbikes' && brandsData.Delivery.Motorbikes) {
-        Object.keys(brandsData.Delivery.Motorbikes).forEach(name => allBrands.push({ name, category: 'Motorbikes' }));
-      } else if (selectedCategory === 'SmallTrucks' && brandsData.Delivery.SmallTrucks) {
-        Object.keys(brandsData.Delivery.SmallTrucks).forEach(name => allBrands.push({ name, category: 'SmallTrucks' }));
+        console.log('[v0] Loading brands for category:', vehicleCategory);
+        
+        // Query vehicles_master collection filtered by vehicleCategory
+        const vehiclesMasterRef = collection(firestore, 'vehicles_master');
+        const q = query(vehiclesMasterRef, where('vehicleCategory', '==', vehicleCategory));
+        const querySnapshot = await getDocs(q);
+        
+        const brands: BrandItem[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          brands.push({
+            id: doc.id,
+            name: data.brand,
+            models: data.models || [],
+            vehicleCategory: data.vehicleCategory,
+          });
+        });
+        
+        console.log('[v0] Loaded brands from Firestore:', brands.length);
+        setAllBrands(brands);
+        setFilteredBrands(brands);
+      } catch (error) {
+        console.error('[v0] Error loading brands from Firestore:', error);
+        Alert.alert('Error', 'Failed to load vehicle brands. Please try again.');
+      } finally {
+        setIsLoadingBrands(false);
       }
-    } else {
-      // If no category selected, show all brands
-      Object.keys(brandsData.Cars).forEach(name => allBrands.push({ name, category: 'Cars' }));
-      Object.keys((brandsData as any).CarDelivery).forEach(name => allBrands.push({ name, category: 'CarDelivery' }));
-      Object.keys(brandsData.Minibuses).forEach(name => allBrands.push({ name, category: 'Minibuses' }));
-      Object.keys(brandsData.Delivery.Motorbikes).forEach(name => allBrands.push({ name, category: 'Motorbikes' }));
-      Object.keys(brandsData.Delivery.SmallTrucks).forEach(name => allBrands.push({ name, category: 'SmallTrucks' }));
-    }
+    };
+    
+    loadBrandsFromFirestore();
+  }, [registrationData.vehicleCategory]);
 
-    setFilteredBrands(allBrands);
-  }, [registrationData.vehicleCategory, registrationData.vehicle?.category]);
-
+  // Filter brands based on search
   useEffect(() => {
-    const allBrands: BrandItem[] = [];
-    const selectedCategory = registrationData.vehicleCategory || registrationData.vehicle?.category;
-
-    if (selectedCategory) {
-      // Only show brands from the selected category
-      if (selectedCategory === 'Cars' && brandsData.Cars) {
-        Object.keys(brandsData.Cars).forEach(name => allBrands.push({ name, category: 'Cars' }));
-      } else if (selectedCategory === 'CarDelivery' && (brandsData as any).CarDelivery) {
-        Object.keys((brandsData as any).CarDelivery).forEach(name => allBrands.push({ name, category: 'CarDelivery' }));
-      } else if (selectedCategory === 'Minibuses' && brandsData.Minibuses) {
-        Object.keys(brandsData.Minibuses).forEach(name => allBrands.push({ name, category: 'Minibuses' }));
-      } else if (selectedCategory === 'Motorbikes' && brandsData.Delivery.Motorbikes) {
-        Object.keys(brandsData.Delivery.Motorbikes).forEach(name => allBrands.push({ name, category: 'Motorbikes' }));
-      } else if (selectedCategory === 'SmallTrucks' && brandsData.Delivery.SmallTrucks) {
-        Object.keys(brandsData.Delivery.SmallTrucks).forEach(name => allBrands.push({ name, category: 'SmallTrucks' }));
-      }
-    } else {
-      // If no category selected, show all brands
-      Object.keys(brandsData.Cars).forEach(name => allBrands.push({ name, category: 'Cars' }));
-      Object.keys((brandsData as any).CarDelivery).forEach(name => allBrands.push({ name, category: 'CarDelivery' }));
-      Object.keys(brandsData.Minibuses).forEach(name => allBrands.push({ name, category: 'Minibuses' }));
-      Object.keys(brandsData.Delivery.Motorbikes).forEach(name => allBrands.push({ name, category: 'Motorbikes' }));
-      Object.keys(brandsData.Delivery.SmallTrucks).forEach(name => allBrands.push({ name, category: 'SmallTrucks' }));
-    }
-
     if (brandSearch.trim() === '') {
       setFilteredBrands(allBrands);
     } else {
-      const query = brandSearch.toLowerCase();
-      const startsWith = allBrands.filter((b) => b.name.toLowerCase().startsWith(query));
+      const searchQuery = brandSearch.toLowerCase();
+      const startsWith = allBrands.filter((b) => b.name.toLowerCase().startsWith(searchQuery));
       const others = allBrands.filter(
-        (b) => !b.name.toLowerCase().startsWith(query) && b.name.toLowerCase().includes(query)
+        (b) => !b.name.toLowerCase().startsWith(searchQuery) && b.name.toLowerCase().includes(searchQuery)
       );
       setFilteredBrands([...startsWith, ...others]);
     }
-  }, [brandSearch, registrationData.vehicleCategory, registrationData.vehicle?.category]);
+  }, [brandSearch, allBrands]);
 
+  // Filter models based on selected brand and search
   useEffect(() => {
-    if (!vehicleData.brand || !brandCategory) {
+    if (!selectedBrand) {
       setFilteredModels([]);
       return;
     }
 
-    let models: string[] = [];
-    if (brandCategory === 'Cars' && (brandsData.Cars as any)[vehicleData.brand]) {
-      models = (brandsData.Cars as any)[vehicleData.brand].models;
-    } else if (brandCategory === 'CarDelivery' && (brandsData as any).CarDelivery[vehicleData.brand]) {
-      models = (brandsData as any).CarDelivery[vehicleData.brand].models;
-    } else if (brandCategory === 'Minibuses' && (brandsData.Minibuses as any)[vehicleData.brand]) {
-      models = (brandsData.Minibuses as any)[vehicleData.brand].models;
-    } else if (brandCategory === 'Motorbikes' && (brandsData.Delivery.Motorbikes as any)[vehicleData.brand]) {
-      models = (brandsData.Delivery.Motorbikes as any)[vehicleData.brand].models;
-    } else if (brandCategory === 'SmallTrucks' && (brandsData.Delivery.SmallTrucks as any)[vehicleData.brand]) {
-      models = (brandsData.Delivery.SmallTrucks as any)[vehicleData.brand].models;
-    }
-
+    const models = selectedBrand.models || [];
+    
     if (modelSearch.trim() === '') {
       setFilteredModels(models);
     } else {
-      const query = modelSearch.toLowerCase();
-      const startsWith = models.filter((m) => m.toLowerCase().startsWith(query));
+      const searchQuery = modelSearch.toLowerCase();
+      const startsWith = models.filter((m) => m.toLowerCase().startsWith(searchQuery));
       const others = models.filter(
-        (m) => !m.toLowerCase().startsWith(query) && m.toLowerCase().includes(query)
+        (m) => !m.toLowerCase().startsWith(searchQuery) && m.toLowerCase().includes(searchQuery)
       );
       setFilteredModels([...startsWith, ...others]);
     }
-  }, [vehicleData.brand, brandCategory, modelSearch]);
+  }, [selectedBrand, modelSearch]);
+
+  // Load vehicle service rules when model is selected
+  useEffect(() => {
+    const loadServiceRules = async () => {
+      if (!selectedBrand || !vehicleData.model) {
+        return;
+      }
+
+      try {
+        // Try to load vehicle_service_rules for the selected vehicle
+        const vehicleId = `${selectedBrand.id}_${vehicleData.model}`.replace(/\s+/g, '_').toLowerCase();
+        const serviceRulesRef = doc(firestore, 'vehicle_service_rules', vehicleId);
+        const serviceRulesSnap = await getDoc(serviceRulesRef);
+        
+        if (serviceRulesSnap.exists()) {
+          const rules = serviceRulesSnap.data();
+          console.log('[v0] Loaded service rules:', rules);
+          setAvailableServices(rules.services || []);
+          setAvailableCargoTypes(rules.cargoTypes || []);
+          setAvailableTonnageOptions(rules.tonnageOptions || []);
+        } else {
+          // Fallback to default options based on category
+          console.log('[v0] No service rules found, using defaults');
+          setDefaultServiceOptions();
+        }
+      } catch (error) {
+        console.error('[v0] Error loading service rules:', error);
+        setDefaultServiceOptions();
+      }
+    };
+
+    loadServiceRules();
+  }, [selectedBrand, vehicleData.model]);
+
+  const setDefaultServiceOptions = () => {
+    const category = registrationData.vehicleCategory;
+    if (category === 'car' || category === 'motorbike') {
+      setAvailableServices(['ride', 'delivery', 'courier', 'towing']);
+      setAvailableCargoTypes([]);
+      setAvailableTonnageOptions([]);
+    } else if (category === 'truck') {
+      setAvailableServices(['delivery', 'courier', 'moving']);
+      setAvailableCargoTypes(['general', 'fragile', 'perishable', 'hazardous']);
+      setAvailableTonnageOptions(['1 ton', '2 tons', '3 tons', '4 tons', '5 tons', '8 tons', '10 tons']);
+    } else if (category === 'minibus') {
+      setAvailableServices(['ride', 'charter']);
+      setAvailableCargoTypes([]);
+      setAvailableTonnageOptions([]);
+    } else {
+      setAvailableServices([]);
+      setAvailableCargoTypes([]);
+      setAvailableTonnageOptions([]);
+    }
+  };
 
   const handleBrandSelect = (item: BrandItem) => {
-    setVehicleData((prev) => ({ ...prev, brand: item.name, model: '' }));
-    setBrandCategory(item.category);
+    setVehicleData((prev) => ({ ...prev, brand: item.name, model: '', services: [], cargoTypes: [], tonnage: '' }));
+    setSelectedBrand(item);
     setBrandSearch('');
     setShowBrandPicker(false);
+    // Immediately populate models from the selected brand
+    setFilteredModels(item.models || []);
   };
 
   const handleModelSelect = (model: string) => {
@@ -303,32 +368,30 @@ export default function VehicleInformation() {
     setShowTonnagePicker(false);
   };
 
-  // Get available services based on vehicle category
-  const getAvailableServices = (): string[] => {
-    const category = registrationData.vehicleCategory;
-    if (category === 'car' || category === 'motorbike') {
-      return ['ride', 'delivery', 'courier', 'towing'];
-    }
-    if (category === 'truck') {
-      return ['delivery', 'courier', 'moving'];
-    }
-    return [];
-  };
-
-  // Get available tonnage options for trucks
-  const getTonnageOptions = (): string[] => {
-    return ['1 ton', '2 tons', '3 tons', '4 tons', '5 tons', '8 tons', '10 tons'];
-  };
-
-  // Check if services should be shown (car, motorbike, truck)
+  // Check if services should be shown
   const shouldShowServices = (): boolean => {
-    const category = registrationData.vehicleCategory;
-    return category === 'car' || category === 'motorbike' || category === 'truck';
+    return availableServices.length > 0;
   };
 
-  // Check if tonnage should be shown (truck only)
+  // Check if cargo types should be shown
+  const shouldShowCargoTypes = (): boolean => {
+    return availableCargoTypes.length > 0;
+  };
+
+  // Check if tonnage should be shown
   const shouldShowTonnage = (): boolean => {
-    return registrationData.vehicleCategory === 'truck';
+    return availableTonnageOptions.length > 0;
+  };
+
+  const handleCargoTypeSelect = (cargoType: string) => {
+    setVehicleData((prev) => {
+      const currentCargoTypes = prev.cargoTypes || [];
+      if (currentCargoTypes.includes(cargoType)) {
+        return { ...prev, cargoTypes: currentCargoTypes.filter(c => c !== cargoType) };
+      } else {
+        return { ...prev, cargoTypes: [...currentCargoTypes, cargoType] };
+      }
+    });
   };
 
   const validatePlate = (text: string) => {
@@ -357,13 +420,12 @@ export default function VehicleInformation() {
     setVehicleData((prev) => ({ ...prev, numberPlate: upper }));
   };
 
-  const classifyVehicle = (category: string | undefined) => {
-    if (category === 'motorbike') return 'Motorbike';
-    if (category === 'truck') return 'Truck';
-    if (category === 'minibus') return 'Minibus';
-    if (category === 'bicycle') return 'Bicycle';
-    if (category === 'car') return 'Car';
-    return '';
+const classifyVehicle = (category: string | undefined) => {
+  if (category === 'motorbike') return 'Motorbike';
+  if (category === 'truck') return 'Truck';
+  if (category === 'minibus') return 'Minibus';
+  if (category === 'car') return 'Car';
+  return '';
   };
 
   const isFormValid = () => {
@@ -378,13 +440,16 @@ export default function VehicleInformation() {
       vehicleData.vehiclePicture &&
       vehicleData.vehicleLicense;
 
-    // Check services requirement for car, motorbike, truck
+    // Check services requirement if services are available
     const servicesValid = !shouldShowServices() || (vehicleData.services && vehicleData.services.length > 0);
     
-    // Check tonnage requirement for truck
+    // Check cargo types requirement if cargo types are available
+    const cargoTypesValid = !shouldShowCargoTypes() || (vehicleData.cargoTypes && vehicleData.cargoTypes.length > 0);
+    
+    // Check tonnage requirement if tonnage options are available
     const tonnageValid = !shouldShowTonnage() || vehicleData.tonnage;
 
-    return basicFieldsValid && servicesValid && tonnageValid && !isUploading;
+    return basicFieldsValid && servicesValid && cargoTypesValid && tonnageValid && !isUploading;
   };
 
   const handleNext = async () => {
@@ -454,31 +519,35 @@ export default function VehicleInformation() {
 
       // Update Firestore with vehicle data and Cloudinary URLs
       const driverRef = doc(firestore, 'drivers', uid);
-      const vehicleUpdateData: any = {
-        'vehicle.brand': vehicleData.brand,
-        'vehicle.model': vehicleData.model,
-        'vehicle.color': vehicleData.color,
-        'vehicle.productionYear': vehicleData.productionYear,
-        'vehicle.plateNumber': vehicleData.numberPlate.trim(),
-        'vehicle.type': classification,
-        'vehicle.vehicleCategory': registrationData.vehicleCategory || '',
-        'vehicle.carImage': vehiclePictureUrl,
-        'vehicle.vehicleLicense': vehicleLicenseUrl,
-        'vehicle.registrationCertificate': vehicleRegistrationUrl,
-        'vehicle.seats': '',
-        registrationStep: 6,
-        updatedAt: serverTimestamp(),
-      };
-
-      // Add services if applicable
-      if (shouldShowServices() && vehicleData.services && vehicleData.services.length > 0) {
-        vehicleUpdateData.services = vehicleData.services;
-      }
-
-      // Add tonnage if applicable (truck only)
-      if (shouldShowTonnage() && vehicleData.tonnage) {
-        vehicleUpdateData['vehicle.tonnage'] = vehicleData.tonnage;
-      }
+const vehicleUpdateData: any = {
+  'vehicle.brand': vehicleData.brand,
+  'vehicle.model': vehicleData.model,
+  'vehicle.color': vehicleData.color,
+  'vehicle.productionYear': vehicleData.productionYear,
+  'vehicle.plateNumber': vehicleData.numberPlate.trim(),
+  'vehicle.type': classification,
+  'vehicle.vehicleCategory': registrationData.vehicleCategory || '',
+  'vehicle.carImage': vehiclePictureUrl,
+  'vehicle.vehicleLicense': vehicleLicenseUrl,
+  'vehicle.registrationCertificate': vehicleRegistrationUrl,
+  registrationStep: 6,
+  updatedAt: serverTimestamp(),
+  };
+  
+  // Add services if applicable
+  if (shouldShowServices() && vehicleData.services && vehicleData.services.length > 0) {
+  vehicleUpdateData.services = vehicleData.services;
+  }
+  
+  // Add cargo types if applicable
+  if (shouldShowCargoTypes() && vehicleData.cargoTypes && vehicleData.cargoTypes.length > 0) {
+  vehicleUpdateData['vehicle.cargoTypes'] = vehicleData.cargoTypes;
+  }
+  
+  // Add tonnage if applicable
+  if (shouldShowTonnage() && vehicleData.tonnage) {
+  vehicleUpdateData['vehicle.tonnage'] = vehicleData.tonnage;
+  }
 
       await updateDoc(driverRef, vehicleUpdateData);
 
@@ -638,12 +707,23 @@ export default function VehicleInformation() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.fieldBox} onPress={() => setShowBrandPicker(true)}>
-          <Text style={styles.fieldLabel}>Vehicle brand</Text>
-          <Text style={vehicleData.brand ? styles.fieldValue : styles.fieldPlaceholder}>
-            {vehicleData.brand || ''}
-          </Text>
-        </TouchableOpacity>
+  <TouchableOpacity 
+  style={[styles.fieldBox, isLoadingBrands && styles.fieldBoxDisabled]} 
+  onPress={() => !isLoadingBrands && setShowBrandPicker(true)}
+  disabled={isLoadingBrands}
+  >
+  <Text style={styles.fieldLabel}>Vehicle brand</Text>
+  {isLoadingBrands ? (
+  <View style={styles.loadingContainer}>
+  <ActivityIndicator size="small" color="#B19CD9" />
+  <Text style={styles.loadingText}>Loading brands...</Text>
+  </View>
+  ) : (
+  <Text style={vehicleData.brand ? styles.fieldValue : styles.fieldPlaceholder}>
+  {vehicleData.brand || 'Select brand'}
+  </Text>
+  )}
+  </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.fieldBox}
@@ -703,18 +783,33 @@ export default function VehicleInformation() {
           </TouchableOpacity>
         )}
 
-        {/* Tonnage field for truck only */}
-        {shouldShowTonnage() && (
-          <TouchableOpacity 
-            style={styles.fieldBox} 
-            onPress={() => setShowTonnagePicker(true)}
-          >
-            <Text style={styles.fieldLabel}>Tonnage</Text>
-            <Text style={vehicleData.tonnage ? styles.fieldValue : styles.fieldPlaceholder}>
-              {vehicleData.tonnage || 'Select tonnage'}
-            </Text>
-          </TouchableOpacity>
-        )}
+  {/* Cargo types field */}
+  {shouldShowCargoTypes() && (
+  <TouchableOpacity
+  style={styles.fieldBox}
+  onPress={() => setShowCargoTypesPicker(true)}
+  >
+  <Text style={styles.fieldLabel}>Cargo Types</Text>
+  <Text style={vehicleData.cargoTypes && vehicleData.cargoTypes.length > 0 ? styles.fieldValue : styles.fieldPlaceholder}>
+  {vehicleData.cargoTypes && vehicleData.cargoTypes.length > 0
+  ? vehicleData.cargoTypes.join(', ')
+  : 'Select cargo types'}
+  </Text>
+  </TouchableOpacity>
+  )}
+  
+  {/* Tonnage field */}
+  {shouldShowTonnage() && (
+  <TouchableOpacity
+  style={styles.fieldBox}
+  onPress={() => setShowTonnagePicker(true)}
+  >
+  <Text style={styles.fieldLabel}>Tonnage</Text>
+  <Text style={vehicleData.tonnage ? styles.fieldValue : styles.fieldPlaceholder}>
+  {vehicleData.tonnage || 'Select tonnage'}
+  </Text>
+  </TouchableOpacity>
+  )}
 
         {/* Upload status indicator */}
         {isUploading && (
@@ -764,14 +859,19 @@ export default function VehicleInformation() {
             />
           </View>
           <FlatList
-            data={filteredBrands}
-            keyExtractor={(item, index) => `${item.name}-${item.category}-${index}`}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={styles.listItem} onPress={() => handleBrandSelect(item)}>
-                <Text style={styles.listItemText}>{item.name}</Text>
-                <Text style={styles.categoryBadge}>{item.category}</Text>
-              </TouchableOpacity>
-            )}
+  data={filteredBrands}
+  keyExtractor={(item, index) => `${item.id}-${index}`}
+  renderItem={({ item }) => (
+  <TouchableOpacity style={styles.listItem} onPress={() => handleBrandSelect(item)}>
+  <Text style={styles.listItemText}>{item.name}</Text>
+  <Text style={styles.modelCount}>{item.models.length} models</Text>
+  </TouchableOpacity>
+  )}
+  ListEmptyComponent={
+  <View style={styles.emptyList}>
+  <Text style={styles.emptyListText}>No brands found for this category</Text>
+  </View>
+  }
           />
         </View>
       </Modal>
@@ -863,7 +963,7 @@ export default function VehicleInformation() {
             <Text style={styles.servicesInfoText}>Select the services you want to offer</Text>
           </View>
           <FlatList
-            data={getAvailableServices()}
+            data={availableServices}
             keyExtractor={(item) => item}
             renderItem={({ item }) => {
               const isSelected = vehicleData.services?.includes(item);
@@ -889,30 +989,69 @@ export default function VehicleInformation() {
         </View>
       </Modal>
 
-      {/* Tonnage Picker Modal */}
-      <Modal visible={showTonnagePicker} animationType="slide" transparent={false}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select Tonnage</Text>
-            <TouchableOpacity onPress={() => setShowTonnagePicker(false)} style={styles.modalClose}>
-              <X color="#fff" size={28} />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={getTonnageOptions()}
-            keyExtractor={(item) => item}
-            renderItem={({ item }) => (
-              <TouchableOpacity 
-                style={[styles.listItem, vehicleData.tonnage === item && styles.listItemSelected]} 
-                onPress={() => handleTonnageSelect(item)}
-              >
-                <Text style={styles.listItemText}>{item}</Text>
-                {vehicleData.tonnage === item && <Text style={styles.checkMark}>✓</Text>}
-              </TouchableOpacity>
-            )}
-          />
-        </View>
-      </Modal>
+  {/* Cargo Types Picker Modal */}
+  <Modal visible={showCargoTypesPicker} animationType="slide" transparent={false}>
+  <View style={styles.modalContainer}>
+  <View style={styles.modalHeader}>
+  <Text style={styles.modalTitle}>Select Cargo Types</Text>
+  <TouchableOpacity onPress={() => setShowCargoTypesPicker(false)} style={styles.modalClose}>
+  <X color="#fff" size={28} />
+  </TouchableOpacity>
+  </View>
+  <View style={styles.servicesInfo}>
+  <Text style={styles.servicesInfoText}>Select the cargo types you can transport</Text>
+  </View>
+  <FlatList
+  data={availableCargoTypes}
+  keyExtractor={(item) => item}
+  renderItem={({ item }) => {
+  const isSelected = vehicleData.cargoTypes?.includes(item);
+  return (
+  <TouchableOpacity
+  style={[styles.listItem, isSelected && styles.listItemSelected]}
+  onPress={() => handleCargoTypeSelect(item)}
+  >
+  <Text style={styles.listItemText}>{item.charAt(0).toUpperCase() + item.slice(1)}</Text>
+  {isSelected && <Text style={styles.checkMark}>✓</Text>}
+  </TouchableOpacity>
+  );
+  }}
+  />
+  <View style={styles.modalFooter}>
+  <TouchableOpacity
+  style={styles.doneButton}
+  onPress={() => setShowCargoTypesPicker(false)}
+  >
+  <Text style={styles.doneButtonText}>Done</Text>
+  </TouchableOpacity>
+  </View>
+  </View>
+  </Modal>
+
+  {/* Tonnage Picker Modal */}
+  <Modal visible={showTonnagePicker} animationType="slide" transparent={false}>
+  <View style={styles.modalContainer}>
+  <View style={styles.modalHeader}>
+  <Text style={styles.modalTitle}>Select Tonnage</Text>
+  <TouchableOpacity onPress={() => setShowTonnagePicker(false)} style={styles.modalClose}>
+  <X color="#fff" size={28} />
+  </TouchableOpacity>
+  </View>
+  <FlatList
+  data={availableTonnageOptions}
+  keyExtractor={(item) => item}
+  renderItem={({ item }) => (
+  <TouchableOpacity
+  style={[styles.listItem, vehicleData.tonnage === item && styles.listItemSelected]}
+  onPress={() => handleTonnageSelect(item)}
+  >
+  <Text style={styles.listItemText}>{item}</Text>
+  {vehicleData.tonnage === item && <Text style={styles.checkMark}>✓</Text>}
+  </TouchableOpacity>
+  )}
+  />
+  </View>
+  </Modal>
     </View>
   );
 }
@@ -1254,6 +1393,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
+  },
+  modelCount: {
+    color: '#999',
+    fontSize: 12,
+    backgroundColor: '#333',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    color: '#999',
+    fontSize: 16,
+  },
+  emptyList: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  emptyListText: {
+    color: '#999',
+    fontSize: 14,
+    textAlign: 'center',
   },
   listItemDisabled: {
     opacity: 0.4,

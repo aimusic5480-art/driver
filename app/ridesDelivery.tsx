@@ -20,7 +20,7 @@ type OptionType = {
   id: number;
   label: string;
   role: string;
-  category: 'car' | 'minibus' | 'motorbike' | 'bicycle' | 'truck';
+  category: 'car' | 'minibus' | 'motorbike' | 'truck';
   icon: string;
   age: string;
   vehicle: string;
@@ -68,18 +68,6 @@ const options: OptionType[] = [
   },
   {
     id: 4,
-    label: 'Deliver with my bike',
-    role: 'Delivery',
-    category: 'bicycle',
-    icon: '🚴',
-    age: 'Age: 18+',
-    vehicle: 'Vehicle: Bicycle',
-    license: 'License: Valid ID Document',
-    tag: 'Delivery',
-    tagColor: '#FF8C00',
-  },
-  {
-    id: 5,
     label: 'Truck',
     role: 'Delivery',
     category: 'truck',
