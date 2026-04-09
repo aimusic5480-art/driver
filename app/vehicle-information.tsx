@@ -195,33 +195,69 @@ export default function VehicleInformation() {
       setIsLoadingBrands(true);
       
       try {
-        const vehicleCategory = registrationData.vehicleCategory;
+        const uid = auth.currentUser?.uid || registrationData.uid;
+        
+        // Step 1: Get vehicleCategory - first try context, then fetch from Firestore
+        let vehicleCategory = registrationData.vehicleCategory;
+        
+        if (!vehicleCategory && uid) {
+          console.log('[v0] No category in context, fetching from Firestore...');
+          const driverRef = doc(firestore, 'drivers', uid);
+          const driverSnap = await getDoc(driverRef);
+          
+          if (driverSnap.exists()) {
+            vehicleCategory = driverSnap.data()?.vehicle?.vehicleCategory;
+            console.log('[v0] Loaded vehicleCategory from Firestore:', vehicleCategory);
+          }
+        }
         
         if (!vehicleCategory) {
-          console.log('[v0] No vehicle category set');
+          console.log('[v0] No vehicle category found');
           setIsLoadingBrands(false);
           return;
         }
 
         console.log('[v0] Loading brands for category:', vehicleCategory);
         
-        // Query vehicles_master collection filtered by vehicleCategory
+        // Step 2: Query vehicles_master collection filtered by vehicleCategory
         const vehiclesMasterRef = collection(firestore, 'vehicles_master');
         const q = query(vehiclesMasterRef, where('vehicleCategory', '==', vehicleCategory));
         const querySnapshot = await getDocs(q);
         
+        // Step 3: Group documents by brand and aggregate models
+        const brandMap: Map<string, { id: string; models: string[]; vehicleCategory: string }> = new Map();
+        
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          const brandName = data.brand;
+          const model = data.model;
+          
+          if (brandMap.has(brandName)) {
+            const existing = brandMap.get(brandName)!;
+            if (model && !existing.models.includes(model)) {
+              existing.models.push(model);
+            }
+          } else {
+            brandMap.set(brandName, {
+              id: docSnap.id, // Store the doc ID for service rules lookup
+              models: model ? [model] : [],
+              vehicleCategory: data.vehicleCategory,
+            });
+          }
+        });
+        
+        // Convert map to array of BrandItem
         const brands: BrandItem[] = [];
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
+        brandMap.forEach((value, brandName) => {
           brands.push({
-            id: doc.id,
-            name: data.brand,
-            models: data.model ? [data.model] : [],
-            vehicleCategory: data.vehicleCategory,
+            id: value.id,
+            name: brandName,
+            models: value.models,
+            vehicleCategory: value.vehicleCategory,
           });
         });
         
-        console.log('[v0] Loaded brands from Firestore:', brands.length);
+        console.log('[v0] Loaded unique brands:', brands.length, brands.map(b => b.name));
         setAllBrands(brands);
         setFilteredBrands(brands);
       } catch (error) {
@@ -233,7 +269,7 @@ export default function VehicleInformation() {
     };
     
     loadBrandsFromFirestore();
-  }, [registrationData.vehicleCategory]);
+  }, [registrationData.vehicleCategory, registrationData.uid]);
 
   // Filter brands based on search
   useEffect(() => {
@@ -278,8 +314,11 @@ export default function VehicleInformation() {
       }
 
       try {
-        // Try to load vehicle_service_rules for the selected vehicle using brand document ID
-        const serviceRulesRef = doc(firestore, 'vehicle_service_rules', selectedBrand.id);
+        // Create vehicleId from brand and model (e.g., "toyota_dyna")
+        const vehicleId = `${selectedBrand.name.toLowerCase()}_${vehicleData.model.toLowerCase()}`.replace(/\s+/g, '_');
+        console.log('[v0] Looking up service rules for:', vehicleId);
+        
+        const serviceRulesRef = doc(firestore, 'vehicle_service_rules', vehicleId);
         const serviceRulesSnap = await getDoc(serviceRulesRef);
         
         if (serviceRulesSnap.exists()) {
@@ -287,10 +326,16 @@ export default function VehicleInformation() {
           console.log('[v0] Loaded service rules:', rules);
           setAvailableServices(rules.services || []);
           setAvailableCargoTypes(rules.cargoTypes || []);
-          setAvailableTonnageOptions(rules.tonnageOptions || []);
+          
+          // Handle tonnageOptions - could be array of strings or numbers
+          const tonnage = rules.tonnageOptions || [];
+          const tonnageStrings = tonnage.map((t: number | string) => 
+            typeof t === 'number' ? `${t} ton${t > 1 ? 's' : ''}` : t
+          );
+          setAvailableTonnageOptions(tonnageStrings);
         } else {
           // Fallback to default options based on category
-          console.log('[v0] No service rules found, using defaults');
+          console.log('[v0] No service rules found for', vehicleId, ', using defaults');
           setDefaultServiceOptions();
         }
       } catch (error) {

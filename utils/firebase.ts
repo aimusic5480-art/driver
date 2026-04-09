@@ -68,7 +68,7 @@ export async function updateDriverData(
     }
 
     if (data.vehicleCategory) {
-      updateData.vehicleCategory = data.vehicleCategory;
+      updateData['vehicle.vehicleCategory'] = data.vehicleCategory;
     }
 
     if (data.vehicle) {
