@@ -30,11 +30,8 @@ type ViewMode = 'main' | 'instruction' | 'camera' | 'preview';
 interface VehicleMasterDoc {
   id: string;
   brand: string;
-  models: string[];
+  model: string;
   vehicleCategory: 'car' | 'minibus' | 'motorbike' | 'truck';
-  services?: string[];
-  cargoTypes?: string[];
-  tonnageOptions?: string[];
 }
 
 type BrandItem = {
@@ -219,7 +216,7 @@ export default function VehicleInformation() {
           brands.push({
             id: doc.id,
             name: data.brand,
-            models: data.models || [],
+            models: data.model ? [data.model] : [],
             vehicleCategory: data.vehicleCategory,
           });
         });
@@ -281,9 +278,8 @@ export default function VehicleInformation() {
       }
 
       try {
-        // Try to load vehicle_service_rules for the selected vehicle
-        const vehicleId = `${selectedBrand.id}_${vehicleData.model}`.replace(/\s+/g, '_').toLowerCase();
-        const serviceRulesRef = doc(firestore, 'vehicle_service_rules', vehicleId);
+        // Try to load vehicle_service_rules for the selected vehicle using brand document ID
+        const serviceRulesRef = doc(firestore, 'vehicle_service_rules', selectedBrand.id);
         const serviceRulesSnap = await getDoc(serviceRulesRef);
         
         if (serviceRulesSnap.exists()) {
